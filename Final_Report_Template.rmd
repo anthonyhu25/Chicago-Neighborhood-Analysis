@@ -1,0 +1,442 @@
+---
+title: "Final Paper"
+author: "STOR 320 Group 1"
+date: "06/23/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggpubr)
+library(cluster)
+library(factoextra)
+library(interactions)
+library(sandwich)
+```
+
+# INTRODUCTION
+
+	Redlining is the practice of discriminating entire neighborhoods from financial services, based on factors such as ethnicity and race. Services that are commonplace today, such as mortgages, loans, deposits, and insurance are systematically denied to these neighborhoods. As a result, these neighborhoods often lacked the financial means to invest and improve their neighborhoods, which led to stagnated growth in these neighborhoods and increasing inequality between these “undesirable” neighborhoods, and neighborhoods that were not redlined. Outlawed in 1968 by the Fair Housing Act, a part of the Civil Rights Act, prohibits redlining on the basis of racial and ethnic discrimination. Still, the effects of redlining persist. Houses in redlined neighborhoods were worth half as much as those in non-redlined neighborhoods, according to a study in 1996. (Hayes)
+
+	However, to understand the full scope of the effects of redlining, it is important for us to examine economic and social data, to fully understand the effects of redlining. We randomly chose the city of Chicago, and its 77 neighborhoods, to examine the potential implications of redlining. Throughout this paper, we seek to answer two questions. The first question is if there exists a statistical difference between neighborhoods with white majorities, compared to neighborhoods with non-white majorities, on economic factors for well-being. The second question is if there a statistical difference between neighborhoods with white majorities, compared to neighborhoods with non-white majorities, on educational factors. 
+
+	In the ongoing American conversation regarding racial equality, it is important for us to learn about past American injustices, especially towards minorities. By answering these two questions, if such a statistical difference exists between the two groups, then we can draw some assumptions on how redlining affects the wellbeing of minority groups. This future knowledge can help policymakers and institutions target neighborhoods in need, with effective legislation, to alleviate the effects of redlining in these neighborhoods, and improve the general well-being of Chicago citizens.
+
+
+# DATA
+Our data came from three different data sets, including Chicago census data, Chicago socioeconomic data, and Chicago schools data. The Chicago census data comes from the CMAP’s July 2020 Community Data Snapshot series. CMAP or Chicago Metropolitan Agency for Planning is a regional planning organization for counties in northeastern Illinois. CMAP compiled this data from many sources, including the U.S. Census Bureau’s 2014-2018 American Community Survey (ACS), the Illinois Department of Employment Security, the Illinois Department of Revenue, and CMAP. The main limitation to this data is that a majority of the data in this data set comes from the American Community Survey and is survey sample-based. Since each data point represents a neighborhood/ municipality, the smaller the neighborhood population the more error in the survey data. This data has 221 rows, as each row represents a Chicago neighborhood and mainly focuses on populations in each neighborhood, including the population of white persons, total population, and unemployment and median income in each neighborhood.
+	The Chicago socioeconomic data came from the U.S. Census Bureau. This data provides us with a glimpse of the socioeconomic conditions in different Chicago neighborhoods. There are 78 rows of neighborhoods with socioeconomic indicators like Hardship Index and percent of households below poverty.
+	Finally, the Chicago schools data is gathered from the Chicago Public Schools (CPS) website, specifically from their CPS School Report Cards for the 2011-2012 academic year. This data has a similar limitation to the Chicago census data, as it is survey-based data and thus smaller neighborhoods would have more error. This data has 566 rows, as each row corresponds to a school within a Chicago neighborhood. Since there are multiple schools within each neighborhood, it took some data wrangling to join it to the other datasets that have a row for each neighborhood. The data itself in this dataset displays academic performance with variables like college and high school math and reading and local factors with variables like parent engagement,  environment, and safety. 
+
+```{r, include=FALSE}
+Visualization_comb <- Chicago_combined %>%
+  select(c("GEOG","WHITE", "TOT_POP","UNEMP", "MEDINC",  "PERCENT.HOUSEHOLDS.BELOW.POVERTY", "HARDSHIP.INDEX" )) %>%
+  transmute(GEOG=GEOG, White_pop = round(WHITE), Total_pop = round(TOT_POP), Unemployment =round(UNEMP), Median_Income = round(MEDINC), Hardship_Index = round(HARDSHIP.INDEX))
+
+Visualization_comb1 <- toupper(Visualization_comb$GEOG)
+Visualization_comb2 <- cbind(Visualization_comb, Visualization_comb1) %>%
+  transmute(GEOG = Visualization_comb1, White_pop =White_pop, Total_pop = Total_pop, Unemployment=Unemployment, Median_Income=Median_Income, Hardship_Index = Hardship_Index)
+
+Visualization_school <- Chicago_schools %>%
+  select(c("Teachers.Score", "Gr.8.Explore.Math..", "Gr.8.Explore.Read..",  "ISAT.Exceeding.Math..", "ISAT.Exceeding.Reading..", "Parent.Environment.Score", "Parent.Engagement.Score", "Instruction.Score", "Family.Involvement.Score", "Environment.Score", "Safety.Score", "Average.Student.Attendance", "Community.Area.Name"))%>%
+  filter(!(Teachers.Score == "NDA")) %>%
+  filter(!(ISAT.Exceeding.Math.. == "NDA")) %>%
+  filter(!(ISAT.Exceeding.Reading..== "NDA")) %>%
+  drop_na() %>%
+  mutate(Teachers.Score = as.numeric(Teachers.Score),
+         Parent.Environment.Score = as.numeric(Parent.Environment.Score), 
+         Parent.Engagement.Score = as.numeric(Parent.Engagement.Score),
+         Instruction.Score = as.numeric(Instruction.Score),
+         Family.Involvement.Score = as.numeric(Family.Involvement.Score),
+         Environment.Score = as.numeric(Environment.Score),
+         Safety.Score = as.numeric(Safety.Score),
+         Gr.8.Explore.Math.. = as.numeric(Gr.8.Explore.Math..),
+         Gr.8.Explore.Read.. = as.numeric(Gr.8.Explore.Read..)) %>%
+  group_by(Community.Area.Name) %>%
+  summarise(Teacher_Mean = round(mean(Teachers.Score)), College_math_mean = round(mean(Gr.8.Explore.Math..)), College_read_mean = round(mean(Gr.8.Explore.Read..)), Math_mean = round(mean(ISAT.Exceeding.Math..)), Reading_mean = round(mean(ISAT.Exceeding.Reading..)), Parent_Enr_mean = round(mean(Parent.Environment.Score)), Parent_Engage_mean = round(mean(Parent.Engagement.Score)), Instruction_mean = round(mean(Instruction.Score)), Family_invole_mean = round(mean(Family.Involvement.Score)), Envr_mean = round(mean(Environment.Score)), Safety_mean = round(mean(Safety.Score)), Student_atten_mean = round(mean(Average.Student.Attendance)), n=n()) %>%
+  transmute(GEOG = Community.Area.Name, College_Math = College_math_mean, College_Reading = College_read_mean, Attendance = Student_atten_mean, HighSchool_Math = Math_mean, Teachers_Score = Teacher_Mean, HighSchool_Reading = Reading_mean, Parent_Environment = Parent_Enr_mean, Parent_Engagement = Parent_Engage_mean, Instruction = Instruction_mean, Family_Involvement = Family_invole_mean, Environment = Envr_mean, Saftey = Safety_mean)
+
+Visualization_tabl <- Visualization_comb2 %>%
+  left_join(Visualization_school, by ="GEOG")
+
+Visualization_tabl
+```
+This table includes variables from all three datasets. Joining Chicago census and Chicago socioeconomic was simple because of the shared “GEOG” (neighborhood) variable. Since the Chicago schools data had information on each school and many schools are present within each neighborhood, many neighborhoods were repeated to describe the area of each school. This was tricky to work with as the census and socioeconomic datasets had data in terms of each neighborhood whereas the school dataset was in terms of each school within the neighborhood. To fix this problem we grouped the school dataset by the neighborhood and took the average of all the schools’ data within each neighborhood, making each row a description of a unique neighborhood rather than a unique school. This is relevant to mention because it is important to point out that the data from the school’s dataset included in this table is not part of the original data but rather a mean across all schools in each neighborhood, limiting this data further.  In this table each neighborhood is represented as “GEOG” and White_pop and Total_pop stand for the White population and total population in each neighborhood. Unemployment displays the number of those unemployed and median income not so surprisingly is the median income in each neighborhood. The rest of the variables, including College_Math, College_Reading, Attendance, Math, Reading, Teachers_Score, Parent_Environment, Parent_Engagement, Instruction, Family_Involvment, Environment,  and Safety are on a scale from 1 to 100. 
+
+```{r include=FALSE}
+Visualization_combb <- Chicago_combined %>%
+  select(c("GEOG","WHITE", "TOT_POP","UNEMP", "MEDINC",  "PERCENT.HOUSEHOLDS.BELOW.POVERTY", "HARDSHIP.INDEX" )) %>%
+  transmute(GEOG=GEOG, White_pop = round(WHITE), Total_pop = round(TOT_POP), Unemployment =round(UNEMP), Median_Income = round(MEDINC), Hardship_Index = round(HARDSHIP.INDEX), Percent_Households_Below_Poverty = round(PERCENT.HOUSEHOLDS.BELOW.POVERTY))
+
+Visualization_combb1 <- toupper(Visualization_combb$GEOG)
+Visualization_combb2 <- cbind(Visualization_combb, Visualization_combb1) %>%
+  transmute(GEOG = Visualization_combb1, White_pop =White_pop, Total_pop = Total_pop, Unemployment=Unemployment, Median_Income=Median_Income, Hardship_Index = Hardship_Index, Percent_Households_Below_Poverty = Percent_Households_Below_Poverty)
+
+Visualization_schoool <- Chicago_schools %>%
+  select(c("Teachers.Score", "Gr.8.Explore.Math..", "Gr.8.Explore.Read..",  "ISAT.Exceeding.Math..", "ISAT.Exceeding.Reading..", "Parent.Environment.Score", "Parent.Engagement.Score", "Instruction.Score", "Family.Involvement.Score", "Environment.Score", "Safety.Score", "Average.Student.Attendance", "Community.Area.Name"))%>%
+  filter(!(Teachers.Score == "NDA")) %>%
+  filter(!(ISAT.Exceeding.Math.. == "NDA")) %>%
+  filter(!(ISAT.Exceeding.Reading..== "NDA")) %>%
+  drop_na() %>%
+  mutate(Teachers.Score = as.numeric(Teachers.Score),
+         Parent.Environment.Score = as.numeric(Parent.Environment.Score), 
+         Parent.Engagement.Score = as.numeric(Parent.Engagement.Score),
+         Instruction.Score = as.numeric(Instruction.Score),
+         Family.Involvement.Score = as.numeric(Family.Involvement.Score),
+         Environment.Score = as.numeric(Environment.Score),
+         Safety.Score = as.numeric(Safety.Score),
+         Gr.8.Explore.Math.. = as.numeric(Gr.8.Explore.Math..),
+         Gr.8.Explore.Read.. = as.numeric(Gr.8.Explore.Read..)) %>%
+  group_by(Community.Area.Name) %>%
+  summarise(Teacher_Mean = round(mean(Teachers.Score)), College_math_mean = round(mean(Gr.8.Explore.Math..)), College_read_mean = round(mean(Gr.8.Explore.Read..)), Math_mean = round(mean(ISAT.Exceeding.Math..)), Reading_mean = round(mean(ISAT.Exceeding.Reading..)), Parent_Enr_mean = round(mean(Parent.Environment.Score)), Parent_Engage_mean = round(mean(Parent.Engagement.Score)), Instruction_mean = round(mean(Instruction.Score)), Family_invole_mean = round(mean(Family.Involvement.Score)), Envr_mean = round(mean(Environment.Score)), Safety_mean = round(mean(Safety.Score)), Student_atten_mean = round(mean(Average.Student.Attendance)), n=n()) %>%
+  transmute(GEOG = Community.Area.Name, College_Math = College_math_mean, College_Reading = College_read_mean, Attendance = Student_atten_mean, HighSchool_Math = Math_mean, Teachers_Score = Teacher_Mean, HighSchool_Reading = Reading_mean, Parent_Environment = Parent_Enr_mean, Parent_Engagement = Parent_Engage_mean, Instruction = Instruction_mean, Family_Involvement = Family_invole_mean, Environment = Envr_mean, Safety = Safety_mean, n=n)
+
+scatterplot_data <- Visualization_combb2 %>%
+  left_join(Visualization_schoool, by ="GEOG")%>%
+  select(c("Total_pop", "Median_Income", "n"))
+ggplot(scatterplot_data, aes(x=Total_pop, y=Median_Income, color="red", size= n))+
+  geom_point() +
+  labs( y = "Median Income", x = "Total Population") +
+  ggtitle("Median Income by Population & School Density")
+```
+	
+This scatterplot shows the relationship between median income and total population in each neighborhood. There is a generally positive relationship between these two variables with many outliers. Smaller neighborhoods tend to have a lower median income, whereas more populated neighborhoods tend to have a larger median income. In this visualization school density in each neighborhood is represented by the size of the data point. 
+
+# RESULTS
+
+#Q1
+
+# Relationship between ethnicity and median income
+```{r include=FALSE}
+(1)
+poverty <- Chicago_combined %>%
+  mutate(pct_white = WHITE / TOT_POP) %>%
+  rename(poverty_rate = PERCENT.HOUSEHOLDS.BELOW.POVERTY) %>%
+  filter(pct_white > 0) %>%
+  mutate(is_less_white = ifelse(pct_white < 0.5, "White Minority", "White Majority")) %>%
+  select(GEOG, poverty_rate, pct_white, is_less_white)
+
+a <- ggplot(data = poverty, mapping = aes(x = is_less_white, y = poverty_rate)) +
+  geom_boxplot()
+
+a + stat_compare_means()
+a + stat_compare_means(method = "t.test")
+
+A <- poverty%>%
+  select(pct_white, poverty_rate) %>%
+  na.omit()
+A1 <- scale(A)
+A2 <- kmeans(A1, centers = 2, nstart = 50)
+fviz_cluster(A2, data = A)
+```
+
+
+
+## Relationship between ethnicity and unemployment rates
+
+```{r include=FALSE}
+(2)
+unemployment <- Chicago_combined %>%
+  mutate(pct_white = WHITE / TOT_POP) %>%
+  mutate(unemployment_rate = UNEMP / TOT_POP) %>%
+  filter(pct_white > 0) %>%
+  mutate(is_less_white = ifelse(pct_white < 0.5, "White Minority", "White majority")) %>%
+  select(GEOG, unemployment_rate, pct_white, is_less_white)
+
+ggplot(data = unemployment, mapping = aes(x = pct_white, y = unemployment_rate, color = is_less_white)) +
+  geom_point() +
+  geom_smooth(method = "loess")
+
+
+c <- unemployment %>%
+  select(pct_white, unemployment_rate) %>%
+  na.omit()
+c1 <- scale(c)
+c2 <- kmeans(c1, centers = 2, nstart = 50)
+fviz_cluster(c2, data = c)
+```
+
+## Relationship between ethnicity and median income.
+
+```{r include=FALSE}
+(3)
+income <- Chicago_combined %>%
+  filter(WHITE > 0) %>%
+  filter(TOT_POP > 0) %>%
+  mutate(white_pct = WHITE/TOT_POP) %>%
+  mutate(is_less_average = ifelse(white_pct < 0.5, "White minority", "White majority")) %>%
+  select(is_less_average, everything())
+
+mean(income$white_pct)
+
+a <- ggplot(data = income, mapping = aes(x = is_less_average, y = MEDINC)) +
+  geom_boxplot() 
+a + stat_compare_means()
+a + stat_compare_means(method = "t.test")
+```
+
+In the various graphics above, we manipulated data by finding the proportion of white citizens in each neighborhood and then comparing it to the 50 percent “benchmark” required for a white majority in a neighborhood. We attain this percentage by dividing the number of white people by the number of people in each neighborhood. Then, the observations are separated into two categories, by whether the population of white people in a neighborhood constitutes a majority of the neighborhood, and stored in the is_majority variable. In other words, we are separating observations based on whether the percentage of white people is above 50%. If above 50%, then they are assigned a value of “white majority”, and “white minority” otherwise. To answer the first question, we will attempt to find if there are distinct patterns between the percentage of white people in a neighborhood, and the economic indicators, such as poverty, unemployment, and median income. In this part, we will use both the percentage of white people in each neighborhood, and the categorical variable is_majority, to create various models, to help us answer this question. If there are distinct patterns displayed, then it is safe to conclude that there are statistically significant differences between the groups, in regards to economic wellness.
+Using a t-test and boxplot in (1), we can see that there are statistically significant differences between the “white majority” and “white minority” groups, with respect to poverty rates,  given that the t-test value is 1.5 * 10^-9, which is statistically significant. In addition, the boxplot shows a significantly lower poverty rate for white-majority neighborhoods, compared to white-minority neighborhoods. Running additional k-means clustering reinforces the findings in (1), showing two distinct clusters of neighborhoods based on the percent of white residents(pct_white) and percent poverty. To examine unemployment rates, we used the overlaid line plot and scatterplot, as well as the k-means clustering distribution, in (2), separated by whether the neighborhoods have a white majority. In general, there is a strong negative relationship between the percentage of white residents in a neighborhood and the unemployment rate. Additionally, there appear to be no extreme outliers to contradict the relationship, so based on the graphs one can assume that the relationship between percentages of white people and unemployment rates to be strong and negative. Finally, by running t-tests between “white majority” and “white minority” groups, as demonstrated in (3), the t-test value for the mean of the two groups, with respect to median income, is extremely small, like the t-test value in (1), at 5.1 * 10 ^-7. In addition, the boxplots for the “white majority” and “white minority” groups are radically different, with the “white majority” group having a higher median income than nearly every neighborhood in the “white minority” category. 
+Through the plots and tests, we have run in this paper for question 1, in each economic indicator, there is a statistically significant difference between neighborhoods with white majorities and neighborhoods with white minorities. Thus, we can safely conclude that there is a strong, positive relationship between the percentage of white residents in a neighborhood, and the economic well-being of the neighborhood and its citizens. 
+
+
+#Q2
+ (2) To understand the effect of the minority percentages of a neighborhood on the quality of education received, this paper first attempts to identify predictors which significantly affect educational achievement. Then, within each of these variables, this paper will assess whether the levels of these factors are significantly different among the percent of diversity (percent of white population) within Chicago neighborhoods. 
+
+
+#Multiple Regression 
+```{r, echo = FALSE}
+Regression1 <- Chicago_schools %>%
+  select(c("Teachers.Score","College.Enrollment.Rate..", "Gr.8.Explore.Math..", "Gr.8.Explore.Read..",  "ISAT.Exceeding.Math..", "ISAT.Exceeding.Reading..", "Parent.Environment.Score", "Parent.Engagement.Score", "Instruction.Score", "Family.Involvement.Score", "Environment.Score", "Safety.Score", "Average.Student.Attendance")) %>%
+  transmute(College_Math = Gr.8.Explore.Math.., College_Reading = Gr.8.Explore.Read.., Attendance = Average.Student.Attendance, Math = ISAT.Exceeding.Math.., Teachers_Score = Teachers.Score, Reading = ISAT.Exceeding.Reading.., Parent_Envr = Parent.Environment.Score, Parent_Engage = Parent.Engagement.Score, Instruction = Instruction.Score, Family_Involve = Family.Involvement.Score, Environment = Environment.Score, Saftey = Safety.Score) %>%
+  filter(!(Teachers_Score == "NDA")) %>%
+  filter(!(Math == "NDA")) %>%
+  filter(!(Reading == "NDA")) %>%
+  drop_na() %>%
+  mutate(Teachers_Score = as.numeric(Teachers_Score),
+         Parent_Envr = as.numeric(Parent_Envr), 
+         Parent_Engage = as.numeric(Parent_Engage),
+         Instruction = as.numeric(Instruction),
+         Family_Involve = as.numeric(Family_Involve),
+         Environment = as.numeric(Environment),
+         Safety = as.numeric(Saftey),
+         College_Math = as.numeric(College_Math),
+         College_Reading = as.numeric(College_Reading))
+
+
+MathSAT_Regression <- lm(Math ~ Teachers_Score + Parent_Envr + Parent_Engage + Instruction + Family_Involve + Environment + Saftey + Attendance, data = Regression1)
+summary(MathSAT_Regression)
+
+ReadingSAT_Regression <- lm(Reading ~ Teachers_Score + Parent_Envr + Parent_Engage + Instruction + Family_Involve + Environment + Saftey + Attendance, data = Regression1)
+summary(ReadingSAT_Regression)
+
+CollegeReady_Reading <- lm(College_Reading ~ Teachers_Score + Parent_Envr + Parent_Engage + Instruction + Family_Involve + Environment + Saftey + Attendance, data = Regression1)
+summary(CollegeReady_Reading)
+
+CollegeReady_Math <- lm(College_Math ~ Teachers_Score + Parent_Envr + Parent_Engage + Instruction + Family_Involve + Environment + Saftey + Attendance, data = Regression1)
+summary(CollegeReady_Math)
+```
+(3) The table above shows a multiple regression analysis analyzes the relationships between 8 different variables (Teachers Scores, Parent Environment Score, Parent Engagement Score, Instruction Score, Family Involvement Score, Environment Score, Safety Score, and Attendance) that choose as possible predictors and the corresponding achievement variables (% of students at college readiness benchmark in Reading, % of students at college readiness benchmark in Reading, % of students exceeding in SAT Math,  % of students exceeding in SAT Reading). Given a significance level of 0.05, 6 of these variables show a statistically significant relationship among most of these measures (2 or more Success measures). These variables include : Parent Environment Score (p = 0.000492, 0.00124, 0.0056, 0.00331), Parent Engagement Score (p = 0.026644, 0.00805), Instruction Score (p = 0.009086, 0.00281,0.03834), Family Involvement (p = 0.0298, 0.00935), Environment Score (p = 0.032519, 0.00321, 0.0014, 0.00268), and Safety Score (p = 1.28e-09, 1.25e-09, 2.21e-07, 7.97e-06). 
+
+#Parent Environment Score
+```{r, echo = FALSE}
+anova1 <- Chicago_schools %>%
+  select(c( "Community.Area.Name","Parent.Environment.Score")) %>%
+  transmute(GEOG = Community.Area.Name, Parent_Envr = Parent.Environment.Score) %>%
+  filter(!(Parent_Envr == "NDA")) %>%
+  mutate(Parent_Envr = as.numeric(Parent_Envr)) %>%
+  group_by(GEOG) %>%
+  summarise(Mean = mean(Parent_Envr), n=n()) %>%
+  select(c("GEOG", "Mean"))
+
+combined <- Chicago_combined %>%
+  select(c("TOT_POP", "WHITE", "GEOG"))
+
+combined2 <- toupper(combined$GEOG)
+
+anova2 <- cbind(combined,combined2)
+anova3 <- anova2 %>%
+  transmute(TOT_POP = TOT_POP, WHITE = WHITE, GEOG = combined2) %>%
+   left_join(anova1, by ="GEOG") %>%
+   transmute(GEOG = GEOG, WHITE_percent = round(100*(WHITE / TOT_POP)), Parent_Envr = round(Mean, 1)) %>%
+   drop_na()
+
+anovatemp <- cut(anova3$Parent_Envr, breaks = c(37, (((55 - 37)/3) + 37),((2 * ((55 - 37)/3)) + 37), 55),
+                  labels = c("Low", "Moderate", "High"))
+anovatemp2 <- cbind(anova3, anovatemp)
+anovafinal <- anovatemp2 %>%
+  transmute(GEOG = GEOG, White = WHITE_percent,  Parent_Envr = anovatemp)
+
+# Change method to anova
+ggboxplot(anovafinal, x = "Parent_Envr", y = "White",
+          color = "Parent_Envr", palette = "jco")+
+  stat_compare_means(method = "anova")
+```
+#Parent Engagement Score 
+```{r}
+anova1 <- Chicago_schools %>%
+  select(c( "Community.Area.Name","Parent.Engagement.Score")) %>%
+  transmute(GEOG = Community.Area.Name, Parent_Engagement = Parent.Engagement.Score) %>%
+  filter(!(Parent_Engagement == "NDA")) %>%
+  mutate(Parent_Engagement = as.numeric(Parent_Engagement)) %>%
+  group_by(GEOG) %>%
+  summarise(Mean = mean(Parent_Engagement), n=n()) %>%
+  select(c("GEOG", "Mean"))
+
+combined <- Chicago_combined %>%
+  select(c("TOT_POP", "WHITE", "GEOG"))
+
+combined2 <- toupper(combined$GEOG)
+
+anova2 <- cbind(combined,combined2)
+anova3 <- anova2 %>%
+  transmute(TOT_POP = TOT_POP, WHITE = WHITE, GEOG = combined2) %>%
+   left_join(anova1, by ="GEOG") %>%
+   transmute(GEOG = GEOG, WHITE_percent = round(100*(WHITE / TOT_POP)), Parent_Engagement = round(Mean, 1)) %>%
+   drop_na()
+
+anovatemp <- cut(anova3$Parent_Engagement, breaks = c(43.1, (((60.5 - 43.2)/3) + 43.2),((2 * ((60.5 - 43.2)/3)) + 43.2), 60.6),
+                  labels = c("Low", "Moderate", "High"))
+anovatemp2 <- cbind(anova3, anovatemp)
+anovafinal <- anovatemp2 %>%
+  transmute(GEOG = GEOG, White = WHITE_percent, Parent_Engagement = anovatemp)
+# Change method to anova
+ggboxplot(anovafinal, x = "Parent_Engagement", y = "White",
+          color = "Parent_Engagement", palette = "jco")+
+  stat_compare_means(method = "anova")
+```
+```{r}
+#Instruction_Score 
+anova1 <- Chicago_schools %>%
+  select(c( "Community.Area.Name","Instruction.Score")) %>%
+  transmute(GEOG = Community.Area.Name, Instruction = Instruction.Score) %>%
+  filter(!(Instruction == "NDA")) %>%
+  mutate(Instruction = as.numeric(Instruction)) %>%
+  group_by(GEOG) %>%
+  summarise(Mean = mean(Instruction), n=n()) %>%
+  select(c("GEOG", "Mean"))
+
+combined <- Chicago_combined %>%
+  select(c("TOT_POP", "WHITE", "GEOG"))
+
+combined2 <- toupper(combined$GEOG)
+
+anova2 <- cbind(combined,combined2)
+anova3 <- anova2 %>%
+  transmute(TOT_POP = TOT_POP, WHITE = WHITE, GEOG = combined2) %>%
+   left_join(anova1, by ="GEOG") %>%
+   transmute(GEOG = GEOG, WHITE_percent = round(100*(WHITE / TOT_POP)), Instruction = round(Mean, 1)) %>%
+   drop_na()
+
+anovatemp <- cut(anova3$Instruction, breaks = c(31.5, (((65.2 - 31.5)/3) + 31.5),((2 * ((65.2 - 31.5)/3)) + 31.5), 65.2),
+                  labels = c("Low", "Moderate", "High"))
+anovatemp2 <- cbind(anova3, anovatemp)
+anovafinal <- anovatemp2 %>%
+  transmute(GEOG = GEOG, White = WHITE_percent,  Instruction = anovatemp)
+
+# Change method to anova
+ggboxplot(anovafinal, x = "Instruction", y = "White",
+          color = "Instruction", palette = "jco")+
+  stat_compare_means(method = "anova")
+```
+```{r}
+#Family_Involvement
+anova1 <- Chicago_schools %>%
+  select(c( "Community.Area.Name","Family.Involvement.Score")) %>%
+  transmute(GEOG = Community.Area.Name, Family_Involve = Family.Involvement.Score) %>%
+  filter(!(Family_Involve == "NDA")) %>%
+  mutate(Family_Involve = as.numeric(Family_Involve)) %>%
+  group_by(GEOG) %>%
+  summarise(Mean = mean(Family_Involve), n=n()) %>%
+  select(c("GEOG", "Mean"))
+
+combined <- Chicago_combined %>%
+  select(c("TOT_POP", "WHITE", "GEOG"))
+
+combined2 <- toupper(combined$GEOG)
+
+anova2 <- cbind(combined,combined2)
+anova3 <- anova2 %>%
+  transmute(TOT_POP = TOT_POP, WHITE = WHITE, GEOG = combined2) %>%
+   left_join(anova1, by ="GEOG") %>%
+   transmute(GEOG = GEOG, WHITE_percent = round(100*(WHITE / TOT_POP)), Family_Involve = round(Mean, 1)) %>%
+   drop_na()
+
+anovatemp <- cut(anova3$Family_Involve, breaks = c(24.9, (((94.5 - 24.9)/3) + 24.9),((2 * ((94.5 - 24.9)/3)) + 24.9), 94.5),
+                  labels = c("Low", "Moderate", "High"))
+anovatemp2 <- cbind(anova3, anovatemp)
+anovafinal <- anovatemp2 %>%
+  transmute(GEOG = GEOG, White = WHITE_percent,  Family_Involve = anovatemp)
+
+# Change method to anova
+ggboxplot(anovafinal, x = "Family_Involve", y = "White",
+          color = "Family_Involve", palette = "jco")+
+  stat_compare_means(method = "anova")
+```
+
+```{r}
+#Environment_Score 
+anova1 <- Chicago_schools %>%
+  select(c( "Community.Area.Name","Environment.Score")) %>%
+  transmute(GEOG = Community.Area.Name, Envr = Environment.Score) %>%
+  filter(!(Envr == "NDA")) %>%
+  mutate(Envr = as.numeric(Envr)) %>%
+  group_by(GEOG) %>%
+  summarise(Mean = mean(Envr), n=n()) %>%
+  select(c("GEOG", "Mean"))
+
+combined <- Chicago_combined %>%
+  select(c("TOT_POP", "WHITE", "GEOG"))
+
+combined2 <- toupper(combined$GEOG)
+
+anova2 <- cbind(combined,combined2)
+anova3 <- anova2 %>%
+  transmute(TOT_POP = TOT_POP, WHITE = WHITE, GEOG = combined2) %>%
+   left_join(anova1, by ="GEOG") %>%
+   transmute(GEOG = GEOG, WHITE_percent = round(100*(WHITE / TOT_POP)), Envr = round(Mean, 1)) %>%
+   drop_na()
+
+anovatemp <- cut(anova3$Envr, breaks = c(32.9, (((68 - 32.9)/3) + 32.9),((2 * ((68 - 32.9)/3)) + 32.9), 68),
+                  labels = c("Low", "Moderate", "High"))
+anovatemp2 <- cbind(anova3, anovatemp)
+anovafinal <- anovatemp2 %>%
+  transmute(GEOG = GEOG, White = WHITE_percent,  Envr = anovatemp)
+
+# Change method to anova
+ggboxplot(anovafinal, x = "Envr", y = "White",
+          color = "Envr", palette = "jco")+
+  stat_compare_means(method = "anova")
+```
+#Safety_Score
+```{r}
+anova_alt_data_raw <- Chicago_schools %>%
+  select(c( "Community.Area.Name","Safety.Score")) %>%
+  transmute(GEOG = Community.Area.Name, Safety_Score = Safety.Score) %>%
+  filter(!(Safety_Score == "NDA")) %>%
+  group_by(GEOG) %>%
+  summarise(Mean = mean(Safety_Score), n=n()) %>%
+  select(c("GEOG", "Mean"))
+anova_alt_dataa <- Chicago_combined %>%
+  select(c("TOT_POP", "WHITE", "GEOG"))
+
+anova_alt_data <- toupper(anova_alt_dataa$GEOG)
+
+ anova_test_data1 <- cbind(anova_alt_dataa, anova_alt_data)
+ anova_test_data <- anova_test_data1 %>%
+   transmute(TOT_POP = TOT_POP, WHITE = WHITE, GEOG = anova_alt_data) %>%
+   left_join(anova_alt_data_raw, by ="GEOG") %>%
+   transmute(GEOG = GEOG, WHITE_percent = round(100*(WHITE / TOT_POP)), Safety = round(Mean, 1)) %>%
+   drop_na()
+anova_test_data2 <- cut(anova_test_data$Safety, breaks = c(0, 100/3, 200/3, 100),
+                  labels = c("Low", "Moderate", "High"))
+anova_test_data3 <- cbind(anova_test_data, anova_test_data2)
+anova_test_data4 <- anova_test_data3 %>%
+  transmute(GEOG = GEOG, White = WHITE_percent, Safety_Score = anova_test_data2)
+
+# Change method to anova
+ggboxplot(anova_test_data4, x = "Safety_Score", y = "White",
+          color = "Safety_Score", palette = "jco")+
+  stat_compare_means(method = "anova")
+
+(4) After choosing the variables which most significantly affect the 4 educational standards outlined above, each of these continuous variables were grouped into three categories “Low”, “Moderate”, and “High” for schools in a particular neighborhood based on even intervals between the minimum and maximum value in the dataset. Following the categorization of the desired variable, the Percentage of White Population in each neighborhood was calculated and represented and displayed as the “White” on the y-axis of the boxplots. Finally, ANOVA tests (with alpha values of 0.05) were run for each category to assess whether there was a significant difference between the levels of this predictor variable and the percentage of white populations in neighborhoods. 
+
+(1) Parent Environment. There is not a statistically significant difference (p = 0.26) between the white percentages in neighborhoods and low, moderate, or high levels of Parent Environment Scores. This result suggests that the levels of Parent Engagement are not significantly different between neighborhoods of varying diversity (defined as % of White Population) (2) Parent Engagement. There is a statistically significant difference (p = 6.62e-7) between the white percentages in neighborhoods and the low, moderate, or high levels of Parent Engagement Scores. This result suggests that the levels of Parent Engagement are significantly different between neighborhoods of varying diversity (defined as % of White Population) (3) Instruction Score. There is not a statistically significant difference (p = 0.61) between the white percentages in neighborhoods and low, moderate, or high levels of Instruction Scores. This result suggests that the levels of Instruction in public schools are not significantly different between the varying diversity (defined as % of White Population) of Chicago neighborhoods. (4) Family Involvement.  There is a statistically significant difference (p = 1.37e-10) between the white percentages in neighborhoods and the low, moderate, or high levels of Family Involvement Scores. This result suggests that the levels of Family Involvement (in relation to education) are significantly different between the varying diversity (defined as % of White Population) of Chicago neighborhoods. (5) Environment Score. There is a statistically significant difference (p = 0.0035) between the white percentages in neighborhoods and the low, moderate, or high levels of Environment Scores. This result suggests that the levels of perceived feelings of Supportive Environment (in relation to education) are significantly different between the varying diversity (defined as % of White Population) of Chicago neighborhoods (6) Safety. There is a statistically significant difference (p = 6.6e-14) between the white percentages in neighborhoods and the low, moderate, or high levels of Safety Scores This result suggests that the levels of perceived feelings of Safety (in relation to at school) are significantly different between the varying diversity (defined as % of White Population) of Chicago neighborhoods. 
+
+# CONCLUSION
+
+These particular datasets and respective analyses were conducted to understand whether there is a statistically significant relationship between the level of minority representation in Chicago neighborhoods and the economic factors (Q1) and public education (Q2) present in the neighborhoods. Question 1 analysis revealed there is a positive relationship between the percentage of white residents, and the financial wellbeing of the neighborhood and its residents. It demonstrates how differences between factors like median income and unemployment (measures of financial well-being) are significant among neighborhoods with differing percentages of white residents. This supports the initial hypothesis that neighborhoods in Chicago are still suffering from the impacts of discriminatory financial practices, such as redlining and gentrification. Question 2 focused on addressing the relationships between Educational Success (as measured by the 4 response variables) and diversity in neighborhoods. Multiple regression analysis first showed that of the 8 initial predictors of educational success, only 6 (Parent Environment, Parent Engagement, Instruction, Family Involvement, Environment, and Safety) showed a statistically significant relationship with educational success in public schools. Then ANOVA tests confirmed that from this group of educational predictors, there was a statistically significant difference between the diversity in each neighborhood (as measured by the percentage of white population) and 4 predictor variables( Parent Engagement Scores, Family Involvement scores, Environment Scores, and Safety Scores). These results are vital in corroborating the analysis of the previous question in that there are significant differences among the percentage of white populations in neighborhoods and predictive factors associated with success in public education. This result may be indicative of the overall system and quality of public education in areas with differing percentages of white populations. 
+	Overall, both of these questions support the previous assumptions about redlining and gentrification and support the claim that the effects of discriminatory housing practices in the Chicago area can still be measured today, in the form of lower educational success and economic status among neighborhoods composed more of minority populations. This paper expands and supports conclusions that signify that historical housing behavior still significantly affects the well-being of residents in the Chicago area. Drawing financial lines and separating areas with high minority populations ultimately causes significant differences in the quality of life (education and economic) for residents in different neighborhoods. This analysis can be improved upon by considering different economic and educational standards, as well as health standards among Chicago residents. These increased factors, not available in the dataset, would further substantiate claims of a difference in the quality of life among areas with higher minority residents. Moreover,  while this analysis and its results only apply to  Chicago neighborhoods, studies like this should be expanded to include other major metropolitan areas, like New York City and Los Angeles, to assess the impacts of discriminatory housing practices on the quality of life of their residents. This would enable analysis on how historical housing practices in the United States continue to affect residents in high minority areas. 
+
+
+Reference :  
+
+Hayes, Adam. “Redlining Definition.” Edited by Erika Rasure, Investopedia, Investopedia, 10 June 2021, www.investopedia.com/terms/r/redlining.asp. 
+
+
+
+
+
