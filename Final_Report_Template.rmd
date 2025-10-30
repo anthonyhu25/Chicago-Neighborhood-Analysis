@@ -30,6 +30,19 @@ library(sandwich)
 Our data came from three different data sets, including Chicago census data, Chicago socioeconomic data, and Chicago schools data. The Chicago census data comes from the CMAP’s July 2020 Community Data Snapshot series. CMAP or Chicago Metropolitan Agency for Planning is a regional planning organization for counties in northeastern Illinois. CMAP compiled this data from many sources, including the U.S. Census Bureau’s 2014-2018 American Community Survey (ACS), the Illinois Department of Employment Security, the Illinois Department of Revenue, and CMAP. The main limitation to this data is that a majority of the data in this data set comes from the American Community Survey and is survey sample-based. Since each data point represents a neighborhood/ municipality, the smaller the neighborhood population the more error in the survey data. This data has 221 rows, as each row represents a Chicago neighborhood and mainly focuses on populations in each neighborhood, including the population of white persons, total population, and unemployment and median income in each neighborhood.
 	The Chicago socioeconomic data came from the U.S. Census Bureau. This data provides us with a glimpse of the socioeconomic conditions in different Chicago neighborhoods. There are 78 rows of neighborhoods with socioeconomic indicators like Hardship Index and percent of households below poverty.
 	Finally, the Chicago schools data is gathered from the Chicago Public Schools (CPS) website, specifically from their CPS School Report Cards for the 2011-2012 academic year. This data has a similar limitation to the Chicago census data, as it is survey-based data and thus smaller neighborhoods would have more error. This data has 566 rows, as each row corresponds to a school within a Chicago neighborhood. Since there are multiple schools within each neighborhood, it took some data wrangling to join it to the other datasets that have a row for each neighborhood. The data itself in this dataset displays academic performance with variables like college and high school math and reading and local factors with variables like parent engagement,  environment, and safety. 
+	
+```{r}
+Chicago_census <- read.csv(url("https://datahub.cmap.illinois.gov/dataset/1d2dd970-f0a6-4736-96a1-3caeb431f5e4/resource/8c4e096e-c90c-4bef-9cf1-9028d094296e/download/ReferenceCCAProfiles20142018.csv"))
+
+Chicago_socionomic <- read.csv(url("https://data.cityofchicago.org/api/views/kn9c-c2s2/rows.csv"))
+
+Chicago_schools <- read.csv(url("https://data.cityofchicago.org/api/views/9xs2-f89t/rows.csv"))
+
+Chicago_combined <- Chicago_socionomic %>%
+  rename(GEOG = "COMMUNITY.AREA.NAME") %>%
+  left_join(Chicago_census, by = "GEOG")
+```
+	
 
 ```{r, include=FALSE}
 Visualization_comb <- Chicago_combined %>%
